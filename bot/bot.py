@@ -26,7 +26,7 @@ class TelegramBot:
             )
 
     def _setup_schedulers(self):
-        t = time(hour=20, minute=20)
+        t = time(hour=21, minute=0)
         self.app.job_queue.run_daily(callback=self._check_birthday, time=t, days=(0, 1, 2, 3, 4, 5, 6))
 
     async def _check_birthday(self, context: CallbackContext):
