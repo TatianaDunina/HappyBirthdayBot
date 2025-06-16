@@ -1,49 +1,59 @@
-from telegram import Update, InlineKeyboardButton
-from telegram.ext import CallbackContext, CallbackQueryHandler, MessageHandler, filters
+from datetime import datetime
+from telegram import Update
+from telegram.ext import CallbackContext, MessageHandler, filters
 import sqlite3
+from constants import Constant
 
-keyboard = [
-        [InlineKeyboardButton('Добавить друга', callback_data='add_friend')]
-    ]
+
 awaiting_data = {}
-
-async def button_click(update: Update, context: CallbackContext):
-    query = update.callback_query
-    await query.answer()
-
-    if query.data == 'add_friend':
-        await query.edit_message_text(text='Введите имя друга и день рождения в формате ГГГГ-ММ-ДД через запятую')
-
-        awaiting_data[update.effective_user.id] = True
 
 
 async def handle_text_input(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
+    text = update.message.text
 
     if user_id in awaiting_data:
         try:
             name, birth_date = update.message.text.split(', ')
 
-            if len(birth_date) != 10 and birth_date[4] != '-' and birth_date[7] != '-':
-                raise ValueError
+            datetime.strptime(birth_date, '%m-%d')
 
             with sqlite3.connect('birthdays.db') as conn:
                 conn.execute('''INSERT INTO friends (name, birthday, telegram_chat_id) VALUES (?, ?, ?)''',
-                             (name, birth_date, user_id)
-                             )
+                                (name, birth_date, user_id)
+                                )
 
-            await update.message.reply_text(text='Данные сохранены!')
+            await update.message.reply_text(Constant.DATA_SAVE)
 
         except ValueError:
-            await update.message.reply_text('Неверный формат. Введите имя и дату в формате: Иван 2000-12-31')
+            await update.message.reply_text(Constant.WRONG_FORMAT)
 
         finally:
             awaiting_data.pop(user_id, None)
 
-    else:
-        await update.message.reply_text('Я вас не понимаю. Нажмите кнопку "Добавить друга"')
+    elif text == Constant.BUTTON_ADD:
+        await update.message.reply_text(Constant.ADD_TEXT)
+        awaiting_data[update.effective_user.id] = True
+
+    elif text == Constant.BUTTON_GET:
+        with sqlite3.connect('birthdays.db') as conn:
+            list_friends = conn.execute(
+                '''SELECT name, birthday FROM friends WHERE telegram_chat_id = ?''', (user_id,)
+                         )
+            rows = list_friends.fetchall()
+
+            if not rows:
+                await update.message.reply_text(Constant.EMPTY_LIST)
+            else:
+                text = "Ваши друзья:\n" + "\n".join(
+                    f"{i + 1}. {row[0]} - {row[1]}"
+                    for i, row in enumerate(rows)
+                )
+                await update.message.reply_text(text)
 
 
 
-click = CallbackQueryHandler(button_click)
+
+
+
 text_user = MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_input)

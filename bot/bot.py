@@ -1,14 +1,16 @@
-from telegram.ext import ApplicationBuilder
-from apscheduler.schedulers.background import BackgroundScheduler
+from telegram.ext import ApplicationBuilder, CallbackContext
 import sqlite3
-from config import Config
 
+from config import Config
+from datetime import datetime, time
 
 class TelegramBot:
     def __init__(self, token: str, db_name: str = 'birthdays.db'):
         self.token = token
         self.db_name = db_name
         self.app = ApplicationBuilder().token(self.token).build()
+
+        self.init_db()
 
     def init_db(self):
         with sqlite3.connect(self.db_name) as conn:
@@ -23,6 +25,23 @@ class TelegramBot:
                 '''
             )
 
+    def _setup_schedulers(self):
+        t = time(hour=20, minute=20)
+        self.app.job_queue.run_daily(callback=self._check_birthday, time=t, days=(0, 1, 2, 3, 4, 5, 6))
+
+    async def _check_birthday(self, context: CallbackContext):
+        today = datetime.now().strftime('%m-%d')
+        print(today)
+
+        with sqlite3.connect(self.db_name) as conn:
+            list_bd = conn.execute(
+                '''SELECT name, telegram_chat_id FROM friends WHERE birthday = ?''', (today,)
+                         ).fetchall()
+
+            for name, chat_id in list_bd:
+                if chat_id:
+                    await context.bot.send_message(chat_id=chat_id, text=f'🎉 Сегодня день рождения у {name}!')
+
 
     def show_table(self):
         with sqlite3.connect(self.db_name) as conn:
@@ -30,17 +49,16 @@ class TelegramBot:
 
     def _register_handlers(self):
         from handlers.start import start_handler
-        from handlers.button_click import click, text_user
+        from handlers.button_click import text_user
 
         self.app.add_handler(start_handler)
-        self.app.add_handler(click)
         self.app.add_handler(text_user)
 
     def run(self):
-        self.init_db()
         print(self.show_table())
 
         self._register_handlers()
+        self._setup_schedulers()
         self.app.run_polling()
 
 
